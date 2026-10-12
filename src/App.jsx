@@ -5,7 +5,10 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  CalendarDays,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Droplets,
   Flame,
@@ -13,6 +16,7 @@ import {
   Menu,
   NotebookPen,
   Plus,
+  Quote,
   Settings,
   Sparkles,
   Target,
@@ -22,6 +26,50 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "daybyday-data-v1";
+
+const QUOTE_LIBRARY = [
+  { text: "Your time is limited, so don't waste it living someone else's life.", author: "Steve Jobs", source: "Stanford commencement address · 2005", category: "MAKE TODAY COUNT" },
+  { text: "You do not rise to the level of your goals. You fall to the level of your systems.", author: "James Clear", source: "Atomic Habits", category: "BUILD YOUR SYSTEMS" },
+  { text: "Nothing in life is to be feared; it is only to be understood.", author: "Marie Curie", source: "Scientist · Nobel laureate", category: "STAY CURIOUS" },
+  { text: "It is our choices that show what we truly are, far more than our abilities.", author: "Albus Dumbledore", source: "Harry Potter and the Chamber of Secrets", category: "CHOOSE YOUR ACTIONS" },
+  { text: "Nothing will work unless you do.", author: "Maya Angelou", source: "Poet and author", category: "TAKE THE FIRST STEP" },
+  { text: "Well done is better than well said.", author: "Benjamin Franklin", source: "Writer, inventor, and statesman", category: "LET ACTION SPEAK" },
+  { text: "Do. Or do not. There is no try.", author: "Yoda", source: "Star Wars: The Empire Strikes Back", category: "COMMIT TO THE WORK" },
+  { text: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky", source: "Hockey player · commonly quoted", category: "TAKE YOUR CHANCE" },
+  { text: "The important thing is not to stop questioning.", author: "Albert Einstein", source: "Physicist · commonly attributed", category: "STAY CURIOUS" },
+  { text: "The secret of getting ahead is getting started.", author: "Mark Twain", source: "Writer · commonly attributed", category: "BEGIN BEFORE READY" },
+  { text: "Great things are done by a series of small things brought together.", author: "Vincent van Gogh", source: "Artist · commonly attributed", category: "RESPECT SMALL STEPS" },
+  { text: "It always seems impossible until it is done.", author: "Nelson Mandela", source: "Often attributed to Mandela", category: "KEEP GOING" },
+  { text: "You have to be odd to be number one.", author: "Dr. Seuss", source: "Author and poet", category: "OWN YOUR PATH" },
+  { text: "A person who never made a mistake never tried anything new.", author: "Albert Einstein", source: "Commonly attributed", category: "LEARN BY TRYING" },
+  { text: "The only way out is through.", author: "Robert Frost", source: "Poet · phrase associated with his work", category: "FACE THE WORK" },
+  { text: "It is never too late to be what you might have been.", author: "George Eliot", source: "Writer · commonly attributed", category: "START AGAIN" },
+  { text: "Believe you can and you're halfway there.", author: "Theodore Roosevelt", source: "Commonly attributed", category: "TRUST YOUR EFFORT" },
+  { text: "I have not failed. I've just found 10,000 ways that won't work.", author: "Thomas Edison", source: "Inventor · commonly attributed", category: "MAKE FAILURE USEFUL" },
+  { text: "The journey of a thousand miles begins with a single step.", author: "Lao Tzu", source: "Tao Te Ching · traditional translation", category: "START SMALL" },
+  { text: "The best way out is always through.", author: "Robert Frost", source: "Poet · commonly quoted", category: "STAY WITH IT" },
+  { text: "If you can dream it, you can do it.", author: "Walt Disney", source: "Commonly attributed", category: "MAKE IT REAL" },
+  { text: "Act as if what you do makes a difference. It does.", author: "William James", source: "Psychologist and philosopher", category: "YOUR WORK MATTERS" },
+  { text: "Nothing is particularly hard if you divide it into small jobs.", author: "Henry Ford", source: "Industrialist · commonly attributed", category: "BREAK IT DOWN" },
+  { text: "A year from now you may wish you had started today.", author: "Karen Lamb", source: "Writer · commonly attributed", category: "START TODAY" },
+  { text: "We are what we repeatedly do.", author: "Will Durant", source: "The Story of Philosophy · summary of Aristotle", category: "BUILD YOUR HABITS" },
+  { text: "The future depends on what you do today.", author: "Mahatma Gandhi", source: "Commonly attributed", category: "MAKE TODAY COUNT" },
+  { text: "You don't have to see the whole staircase, just take the first step.", author: "Martin Luther King Jr.", source: "Commonly attributed", category: "TAKE THE FIRST STEP" },
+  { text: "The only impossible journey is the one you never begin.", author: "Tony Robbins", source: "Author and speaker", category: "BEGIN THE JOURNEY" },
+  { text: "Small disciplines repeated with consistency every day lead to great achievements.", author: "John C. Maxwell", source: "Author and leadership speaker", category: "CHOOSE CONSISTENCY" },
+  { text: "Do what you can, with what you have, where you are.", author: "Theodore Roosevelt", source: "Commonly attributed", category: "USE WHAT YOU HAVE" },
+];
+
+// Select a stable set of five quotes for each local calendar date.
+// The selection changes daily without an API or backend.
+function getDailyQuotes(dateString) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const dayNumber = Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+  const start = dayNumber % QUOTE_LIBRARY.length;
+  return Array.from({ length: 5 }, (_, index) =>
+      QUOTE_LIBRARY[(start + index * 7) % QUOTE_LIBRARY.length]
+  );
+}
 
 const DEFAULT_HABITS = [
   { id: "coding", name: "Deep work / coding", detail: "Focus on DSA or projects", icon: Code2 },
@@ -216,6 +264,8 @@ function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [notice, setNotice] = useState("");
+  const [quoteIndex, setQuoteIndex] = useState(0);
+  const dailyQuotes = getDailyQuotes(today);
 
   const record = getDayRecord(data, today);
   const habits = data.habits || DEFAULT_HABITS;
@@ -271,6 +321,25 @@ function App() {
     ).length;
     return { ...habit, completedDays, percentage: Math.round((completedDays / 7) * 100) };
   }).sort((a, b) => b.percentage - a.percentage);
+
+  useEffect(() => {
+    // Refresh the current local date while the page remains open.
+    const dateRefresh = window.setInterval(() => {
+      const currentDate = getToday();
+      setToday((previous) => previous === currentDate ? previous : currentDate);
+    }, 30000);
+
+    return () => window.clearInterval(dateRefresh);
+  }, []);
+
+  useEffect(() => {
+    setQuoteIndex(0);
+    const rotation = window.setInterval(() => {
+      setQuoteIndex((current) => (current + 1) % dailyQuotes.length);
+    }, 15000);
+
+    return () => window.clearInterval(rotation);
+  }, [today]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -521,6 +590,92 @@ function App() {
           </header>
 
           <div id="dashboard" className="mx-auto max-w-[1440px] scroll-mt-24 p-4 sm:p-8">
+            {/* Today's date and rotating motivation */}
+            <Card className="relative mb-8 overflow-hidden border-[#E8D9C5] bg-[#F7F0E5] p-5 text-[#29241F] shadow-[0_18px_55px_rgba(0,0,0,0.16)] sm:p-8">
+              <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#D9A15B]/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-[#B96C43]/10 blur-3xl" />
+              <div className="relative grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
+                <div className="flex flex-col justify-between border-b border-[#DCCAB2] pb-6 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8">
+                  <div>
+                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[#B96C43]/25 bg-white/50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-[#98512F]">
+                      <CalendarDays size={14} /> YOUR DAILY PAUSE
+                    </div>
+                    <p className="font-serif text-3xl font-semibold leading-tight tracking-tight text-[#29241F] sm:text-4xl">
+                      {formatDate(today).split(", ")[1]}
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-[#76695C]">
+                      {formatDate(today).split(", ")[0]} · {today.slice(0, 4)} · A new page to write.
+                    </p>
+                  </div>
+                  <div className="mt-6 flex items-center gap-2 text-xs font-medium text-[#98512F]">
+                    <span className="h-2 w-2 rounded-full bg-[#B96C43]" />
+                    ONE DAY. ONE STEP. KEEP GOING.
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="mb-5 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#98512F]">A thought to carry with you</p>
+                      <p className="mt-1 text-xs text-[#8A7A69]">Wisdom from science, stories, and creative minds</p>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-[#DCCAB2] bg-white/60 px-3 py-1.5 text-[11px] font-semibold tabular-nums text-[#76695C]">
+                      0{quoteIndex + 1} <span className="text-[#B96C43]">/</span> 05
+                    </span>
+                  </div>
+
+                  <div className="min-h-[145px]" aria-live="polite" aria-atomic="true">
+                    <Quote size={27} strokeWidth={1.6} className="mb-3 text-[#B96C43]/70" />
+                    <p className="font-serif text-2xl font-medium leading-[1.35] tracking-[-0.025em] text-[#29241F] sm:text-3xl sm:leading-[1.35]">
+                      “{dailyQuotes[quoteIndex].text}”
+                    </p>
+                    <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold text-[#29241F]">{dailyQuotes[quoteIndex].author}</p>
+                        <p className="mt-1 text-xs text-[#8A7A69]">{dailyQuotes[quoteIndex].source}</p>
+                      </div>
+                      <span className="rounded-md bg-[#E8D9C5]/70 px-2.5 py-1.5 text-[9px] font-bold tracking-[0.16em] text-[#98512F]">
+                        {dailyQuotes[quoteIndex].category}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-between border-t border-[#DCCAB2] pt-4">
+                    <p className="text-[11px] text-[#8A7A69]">Let the words settle. Then take the next step.</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                          type="button"
+                          onClick={() => setQuoteIndex((current) => (current - 1 + dailyQuotes.length) % dailyQuotes.length)}
+                          className="rounded-full border border-[#DCCAB2] bg-white/60 p-2.5 text-[#6F5A49] transition hover:border-[#B96C43] hover:bg-white hover:text-[#98512F]"
+                          aria-label="Previous quote"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <div className="flex items-center gap-1.5 px-1" aria-label={`Quote ${quoteIndex + 1} of ${dailyQuotes.length}`}>
+                        {dailyQuotes.map((quote, index) => (
+                            <button
+                                key={`${quote.author}-${index}`}
+                                type="button"
+                                onClick={() => setQuoteIndex(index)}
+                                className={`h-1.5 rounded-full transition-all duration-300 ${index === quoteIndex ? "w-6 bg-[#B96C43]" : "w-1.5 bg-[#CBB9A3] hover:bg-[#A88E75]"}`}
+                                aria-label={`Show quote ${index + 1}`}
+                            />
+                        ))}
+                      </div>
+                      <button
+                          type="button"
+                          onClick={() => setQuoteIndex((current) => (current + 1) % dailyQuotes.length)}
+                          className="rounded-full border border-[#DCCAB2] bg-white/60 p-2.5 text-[#6F5A49] transition hover:border-[#B96C43] hover:bg-white hover:text-[#98512F]"
+                          aria-label="Next quote"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
             {/* Greeting */}
             <div className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
               <div>
