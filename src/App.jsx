@@ -211,19 +211,29 @@ function getBestConsistencyStreak(data, habits, today) {
   return best;
 }
 
-function getLastDays(data, habits, today, count = 365) {
-  return Array.from({ length: count }, (_, index) => {
-    const date = shiftDate(today, index - count + 1);
+
+function getCalendarYearDays(data, habits, year) {
+  const daysInYear = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+
+  return Array.from({ length: daysInYear }, (_, index) => {
+    const date = dateKey(new Date(year, 0, index + 1));
     const record = getDayRecord(data, date);
-    const completed = habits.filter((habit) => record.completed?.[habit.id]).length;
+    const completed = habits.filter(
+        (habit) => record.completed?.[habit.id]
+    ).length;
     const total = habits.length;
-    const level = !completed ? 0 : completed / Math.max(total, 1) < 0.34 ? 1
-        : completed / Math.max(total, 1) < 0.67 ? 2
-            : completed / Math.max(total, 1) < 1 ? 3 : 4;
+
+    const ratio = completed / Math.max(total, 1);
+    const level =
+        completed === 0 ? 0 :
+            ratio < 0.34 ? 1 :
+                ratio < 0.67 ? 2 :
+                    ratio < 1 ? 3 : 4;
 
     return { date, completed, total, level };
   });
 }
+
 
 
 function Card({ children, className = "", style }) {
@@ -282,18 +292,39 @@ function App() {
 
   const currentStreak = getConsistencyStreak(data, habits, today);
   const bestStreak = getBestConsistencyStreak(data, habits, today);
-  const activityDays = getLastDays(data, habits, today, 365);
-  const activeDays = activityDays.filter((day) => day.completed > 0).length;
-  // Pad the beginning so the heatmap always starts on Sunday, like GitHub's graph.
-  const heatmapPadding = new Date(`${activityDays[0].date}T12:00:00`).getDay();
+
+  const calendarYear = Number(today.slice(0, 4));
+
+  const activityDays = getCalendarYearDays(
+      data,
+      habits,
+      calendarYear
+  );
+
+  const activeDays = activityDays.filter(
+      (day) => day.date <= today && day.completed > 0
+  ).length;
+
+// Align January 1 with its correct weekday.
+  const heatmapPadding = new Date(
+      `${activityDays[0].date}T12:00:00`
+  ).getDay();
+
   const heatmapCells = [
     ...Array.from({ length: heatmapPadding }, () => null),
     ...activityDays,
   ];
+
+// Complete the final week so every column has seven rows.
+  while (heatmapCells.length % 7 !== 0) {
+    heatmapCells.push(null);
+  }
+
   const heatmapWeeks = Array.from(
-      { length: Math.ceil(heatmapCells.length / 7) },
+      { length: heatmapCells.length / 7 },
       (_, index) => heatmapCells.slice(index * 7, index * 7 + 7)
   );
+
   const longestHabitStreak = habits.reduce(
       (best, habit) => Math.max(best, getStreak(data, habit.id, today)),
       0
@@ -737,21 +768,33 @@ function App() {
             <Card className="mb-8 p-5 sm:p-6">
               <SectionTitle
                   icon={Activity}
+
                   title="Your consistency"
-                  subtitle="Your last 365 days. Each square represents one day."
-                  right={<span className="text-xs text-muted">{activeDays}/365 active days</span>}
+                  subtitle={`Your ${calendarYear} calendar. Each square represents one day.`}
+                  right={
+                    <span className="text-xs text-muted">
+                       {activeDays} active days
+                    </span>
+                  }
+
               />
               <div className="overflow-x-auto pb-2">
-                <div className="min-w-[780px]">
+                <div className="min-w-[1000px]">
                   <div
-                      className="mb-2 grid gap-[3px] pl-8 text-[10px] text-muted"
+                      className="mb-2 grid gap-x-5 gap-y-[3px] pl-8 text-[10px] text-muted"
                       style={{ gridTemplateColumns: `repeat(${heatmapWeeks.length}, minmax(0, 1fr))` }}
                   >
                     {heatmapWeeks.map((week, weekIndex) => {
-                      const firstDay = week.find(Boolean);
-                      const monthLabel = firstDay && new Date(`${firstDay.date}T12:00:00`).getDate() <= 7
-                          ? new Date(`${firstDay.date}T12:00:00`).toLocaleDateString("en-US", { month: "short" })
+
+                      const firstOfMonth = week.find(
+                          (day) => day && day.date.slice(8, 10) === "01"
+                      );
+
+                      const monthLabel = firstOfMonth
+                          ? new Date(`${firstOfMonth.date}T12:00:00`)
+                              .toLocaleDateString("en-US", { month: "short" })
                           : "";
+
                       return <span key={weekIndex}>{monthLabel}</span>;
                     })}
                   </div>
@@ -760,11 +803,19 @@ function App() {
                       <span>Sun</span><span></span><span>Tue</span><span></span><span>Thu</span><span></span><span>Sat</span>
                     </div>
                     <div
-                        className="grid flex-1 gap-[3px]"
+                        className="grid flex-1 gap-x-5 gap-y-[3px]"
                         style={{ gridTemplateColumns: `repeat(${heatmapWeeks.length}, minmax(0, 1fr))` }}
                     >
                       {heatmapWeeks.map((week, weekIndex) => (
-                          <div key={weekIndex} className="grid grid-rows-7 gap-[3px]">
+                          <div
+                              key={weekIndex}
+                              className={`grid grid-rows-7 gap-1 ${
+                                  weekIndex > 0 &&
+                                  week.some((day) => day && day.date.slice(8, 10) === "01")
+                                      ? "ml-2"
+                                      : ""
+                              }`}
+                          >
                             {Array.from({ length: 7 }, (_, dayIndex) => {
                               const day = week[dayIndex];
                               if (!day) return <span key={`empty-${weekIndex}-${dayIndex}`} className="aspect-square" />;
@@ -778,7 +829,7 @@ function App() {
                                       key={day.date}
                                       title={`${formatDate(day.date)} — ${day.completed}/${day.total} habits completed`}
                                       aria-label={`${day.date}: ${day.completed} of ${day.total} habits completed`}
-                                      className={`aspect-square min-w-0 rounded-[3px] border border-white/[0.04] ${color}`}
+                                      className={`h-4 w-4 shrink-0 rounded-[3px] ${color}`}
                                   />
                               );
                             })}
