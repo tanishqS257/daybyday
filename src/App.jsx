@@ -225,15 +225,18 @@ function getLastDays(data, habits, today, count = 365) {
   });
 }
 
-function Card({ children, className = "" }) {
+
+function Card({ children, className = "", style }) {
   return (
       <section
+          style={style}
           className={`rounded-2xl border border-white/[0.07] bg-panel ${className}`}
       >
         {children}
       </section>
   );
 }
+
 
 function SectionTitle({ icon: Icon, title, subtitle, right }) {
   return (
@@ -591,8 +594,17 @@ function App() {
 
           <div id="dashboard" className="mx-auto max-w-[1440px] scroll-mt-24 p-4 sm:p-8">
             {/* Today's date and rotating motivation */}
-            <Card className="relative mb-8 overflow-hidden border-[#E8D9C5] bg-[#F7F0E5] p-5 text-[#29241F] shadow-[0_18px_55px_rgba(0,0,0,0.16)] sm:p-8">
-              <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#D9A15B]/20 blur-3xl" />
+
+            <Card
+                style={{
+                  backgroundColor: "#F7F0E5",
+                  borderColor: "#E8D9C5",
+                  color: "#29241F",
+                }}
+                className="relative mb-8 overflow-hidden border-[#E8D9C5] bg-[#F7F0E5] p-5 text-[#29241F] shadow-[0_18px_55px_rgba(0,0,0,0.16)] sm:p-8"
+            >
+
+            <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-[#D9A15B]/20 blur-3xl" />
               <div className="pointer-events-none absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-[#B96C43]/10 blur-3xl" />
               <div className="relative grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
                 <div className="flex flex-col justify-between border-b border-[#DCCAB2] pb-6 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-8">
