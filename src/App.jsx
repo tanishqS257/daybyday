@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -23,6 +23,14 @@ import {
   Trophy,
   Dumbbell,
   X,
+  Download,
+  Upload,
+  ShieldCheck,
+  Coffee,
+  Pause,
+  Play,
+  RotateCcw,
+  Timer,
 } from "lucide-react";
 
 const STORAGE_KEY = "daybyday-data-v1";
@@ -277,6 +285,25 @@ function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [notice, setNotice] = useState("");
+
+  const FOCUS_SESSIONS_KEY = "daybyday-focus-sessions-v1";
+
+  const [focusDuration, setFocusDuration] = useState(25);
+  const [focusRemaining, setFocusRemaining] = useState(25 * 60);
+  const [focusRunning, setFocusRunning] = useState(false);
+  const [focusEndAt, setFocusEndAt] = useState(null);
+  const [focusTask, setFocusTask] = useState("Deep work / coding");
+  const [focusMode, setFocusMode] = useState("focus");
+
+  const [focusSessions, setFocusSessions] = useState(() => {
+    try {
+      return Number(localStorage.getItem(FOCUS_SESSIONS_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const backupInputRef = useRef(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const dailyQuotes = getDailyQuotes(today);
 
@@ -367,6 +394,53 @@ function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(
+          FOCUS_SESSIONS_KEY,
+          String(focusSessions)
+      );
+    } catch {
+      // The timer can still work if storage is unavailable.
+    }
+  }, [focusSessions]);
+
+  useEffect(() => {
+    if (!focusRunning || !focusEndAt) return;
+
+    const tick = () => {
+      const remaining = Math.max(
+          0,
+          Math.ceil((focusEndAt - Date.now()) / 1000)
+      );
+
+      setFocusRemaining(remaining);
+
+      if (remaining === 0) {
+        setFocusRunning(false);
+        setFocusEndAt(null);
+
+        if (focusMode === "focus") {
+          setFocusSessions((count) => count + 1);
+          setFocusMode("break");
+          setFocusRemaining(5 * 60);
+          setNotice("Focus session complete! Take a short break.");
+        } else {
+          setFocusMode("focus");
+          setFocusRemaining(focusDuration * 60);
+          setNotice("Break finished. Ready to focus again?");
+        }
+
+        window.setTimeout(() => setNotice(""), 3500);
+      }
+    };
+
+    tick();
+    const interval = window.setInterval(tick, 250);
+
+    return () => window.clearInterval(interval);
+  }, [focusRunning, focusEndAt, focusMode, focusDuration]);
+
+  useEffect(() => {
     setQuoteIndex(0);
     const rotation = window.setInterval(() => {
       setQuoteIndex((current) => (current + 1) % dailyQuotes.length);
@@ -419,6 +493,154 @@ function App() {
     updateRecord({ note });
     setNotice("Your reflection is saved.");
     window.setTimeout(() => setNotice(""), 2500);
+  }
+
+  function exportBackup() {
+    const backup = {
+      app: "DAYBYDAY",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data,
+    };
+
+    const blob = new Blob(
+        [JSON.stringify(backup, null, 2)],
+        { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `daybyday-backup-${getToday()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+    setNotice("Backup downloaded successfully.");
+    window.setTimeout(() => setNotice(""), 2500);
+  }
+
+  function restoreBackup(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Allow only reasonably sized JSON backups.
+    if (file.size > 5 * 1024 * 1024) {
+      setNotice("Backup file is too large (maximum 5 MB).");
+      event.target.value = "";
+      window.setTimeout(() => setNotice(""), 3000);
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const backup = JSON.parse(reader.result);
+
+        if (
+            backup?.app !== "DAYBYDAY" ||
+            backup?.version !== 1 ||
+            !backup.data ||
+            typeof backup.data !== "object" ||
+            Array.isArray(backup.data)
+        ) {
+          throw new Error("This is not a valid DAYBYDAY backup.");
+        }
+
+        const restored = backup.data;
+
+        if (
+            !restored.days ||
+            typeof restored.days !== "object" ||
+            Array.isArray(restored.days) ||
+            !Array.isArray(restored.habits)
+        ) {
+          throw new Error("The backup data is incomplete.");
+        }
+
+        const validHabits = restored.habits.every(
+            (habit) =>
+                habit &&
+                typeof habit.id === "string" &&
+                habit.id.length > 0 &&
+                typeof habit.name === "string" &&
+                typeof habit.detail === "string"
+        );
+
+        const validDays = Object.entries(restored.days).every(
+            ([date, day]) =>
+                /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+                day &&
+                typeof day === "object" &&
+                !Array.isArray(day) &&
+                day.completed &&
+                typeof day.completed === "object" &&
+                !Array.isArray(day.completed) &&
+                (day.note === undefined ||
+                    typeof day.note === "string") &&
+                (day.water === undefined ||
+                    (Number.isFinite(day.water) &&
+                        day.water >= 0 &&
+                        day.water <= 30))
+        );
+
+        if (!validHabits || !validDays) {
+          throw new Error("The backup contains invalid data.");
+        }
+
+        const uniqueHabitIds = new Set(
+            restored.habits.map((habit) => habit.id)
+        );
+
+        if (uniqueHabitIds.size !== restored.habits.length) {
+          throw new Error("The backup contains duplicate habit IDs.");
+        }
+
+        const confirmed = window.confirm(
+            "Restore this backup? Your current DAYBYDAY data will be replaced. Export a backup of your current data first if you want to keep it."
+        );
+
+        if (!confirmed) {
+          event.target.value = "";
+          return;
+        }
+
+        const safeData = {
+          days: restored.days,
+          habits: restored.habits,
+        };
+
+        // Write successfully before changing the visible state.
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify(safeData)
+        );
+
+        setData(safeData);
+        setNote(safeData.days[today]?.note || "");
+        setNotice("Backup restored successfully.");
+      } catch (error) {
+        setNotice(
+            error instanceof SyntaxError
+                ? "The selected file is not valid JSON."
+                : error.message || "Unable to restore this backup."
+        );
+      } finally {
+        event.target.value = "";
+        window.setTimeout(() => setNotice(""), 3500);
+      }
+    };
+
+    reader.onerror = () => {
+      setNotice("Unable to read the selected file.");
+      event.target.value = "";
+      window.setTimeout(() => setNotice(""), 3000);
+    };
+
+    reader.readAsText(file);
   }
 
   function addHabit(event) {
@@ -475,6 +697,7 @@ function App() {
 
   const sidebarItems = [
     { name: "Dashboard", icon: LayoutDashboard },
+    { name: "Focus Mode", icon: Timer },
     { name: "My habits", icon: CheckCircle2 },
     { name: "Journal", icon: NotebookPen },
     { name: "Progress", icon: Activity },
@@ -486,6 +709,7 @@ function App() {
 
     const target = {
       Dashboard: "dashboard",
+      "Focus Mode": "focus",
       "My habits": "habits",
       Journal: "journal",
       Progress: "analytics",
@@ -499,6 +723,13 @@ function App() {
 
   return (
       <div className="min-h-screen bg-background text-gray-100">
+        <input
+            ref={backupInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={restoreBackup}
+        />
         {mobileMenu && (
             <button
                 aria-label="Close navigation overlay"
@@ -572,6 +803,37 @@ function App() {
               </p>
             </div>
 
+            <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.04] p-4">
+              <div className="mb-3 flex items-center gap-2 text-emerald-300">
+                <ShieldCheck size={17} />
+                <span className="text-xs font-semibold">
+        Protect your progress
+      </span>
+              </div>
+
+              <p className="mb-4 text-xs leading-5 text-gray-400">
+                Keep a backup of your habits, journal, and consistency history.
+              </p>
+
+              <button
+                  type="button"
+                  onClick={exportBackup}
+                  className="mb-2 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-3 py-2.5 text-sm font-semibold text-gray-950 transition hover:bg-emerald-300"
+              >
+                <Download size={16} />
+                Export backup
+              </button>
+
+              <button
+                  type="button"
+                  onClick={() => backupInputRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-gray-200 transition hover:bg-white/[0.05]"
+              >
+                <Upload size={16} />
+                Restore backup
+              </button>
+            </div>
+
             <div className="mt-4 flex items-center gap-3 border-t border-white/[0.07] pt-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-lime-300 to-emerald-500 font-bold text-gray-950">
                 Y
@@ -622,6 +884,8 @@ function App() {
               </button>
             </div>
           </header>
+
+
 
           <div id="dashboard" className="mx-auto max-w-[1440px] scroll-mt-24 p-4 sm:p-8">
             {/* Today's date and rotating motivation */}
@@ -1264,7 +1528,176 @@ function App() {
                 </Card>
               </div>
             </div>
+            <section
+                id="focus"
+                className="mx-auto max-w-[1440px] scroll-mt-24 px-4 pt-6 sm:px-8"
+            >
+              <Card className="overflow-hidden p-5 sm:p-8">
+                <SectionTitle
+                    icon={Timer}
+                    title="Focus Mode"
+                    subtitle="One task. One session. No distractions."
+                    right={
+                      <span className="rounded-full bg-lime-300/10 px-3 py-1.5 text-xs text-lime-300">
+          {focusSessions} sessions completed
+        </span>
+                    }
+                />
 
+                <div className="grid gap-8 lg:grid-cols-[1fr_1fr]">
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-white/[0.06] bg-black/20 p-6 sm:p-8">
+                    <div className="mb-5 flex items-center gap-2 text-sm text-muted">
+                      {focusMode === "focus" ? (
+                          <Timer size={17} className="text-lime-300" />
+                      ) : (
+                          <Coffee size={17} className="text-sky-300" />
+                      )}
+                      {focusMode === "focus" ? "FOCUS SESSION" : "SHORT BREAK"}
+                    </div>
+
+                    <p className="text-5xl font-semibold tracking-tight tabular-nums sm:text-7xl">
+                      {String(Math.floor(focusRemaining / 60)).padStart(2, "0")}
+                      :
+                      {String(focusRemaining % 60).padStart(2, "0")}
+                    </p>
+
+                    <p className="mt-4 text-sm text-muted">
+                      {focusRunning ? "Stay with your task." : "Ready when you are."}
+                    </p>
+
+                    <div className="mt-8 flex w-full max-w-sm gap-3">
+                      {!focusRunning ? (
+                          <button
+                              type="button"
+                              onClick={() => {
+                                if (focusRemaining <= 0) {
+                                  setFocusRemaining(
+                                      (focusMode === "focus" ? focusDuration : 5) * 60
+                                  );
+                                }
+                                setFocusEndAt(
+                                    Date.now() +
+                                    Math.max(1, focusRemaining) * 1000
+                                );
+                                setFocusRunning(true);
+                              }}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-lime-300 px-4 py-3 font-semibold text-gray-950 transition hover:bg-lime-200"
+                          >
+                            <Play size={17} />
+                            Start
+                          </button>
+                      ) : (
+                          <button
+                              type="button"
+                              onClick={() => {
+                                setFocusRemaining(
+                                    Math.max(
+                                        0,
+                                        Math.ceil((focusEndAt - Date.now()) / 1000)
+                                    )
+                                );
+                                setFocusRunning(false);
+                                setFocusEndAt(null);
+                              }}
+                              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-lime-300 px-4 py-3 font-semibold text-gray-950 transition hover:bg-lime-200"
+                          >
+                            <Pause size={17} />
+                            Pause
+                          </button>
+                      )}
+
+                      <button
+                          type="button"
+                          onClick={() => {
+                            setFocusRunning(false);
+                            setFocusEndAt(null);
+                            setFocusMode("focus");
+                            setFocusRemaining(focusDuration * 60);
+                          }}
+                          className="flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-3 text-sm text-gray-200 transition hover:bg-white/[0.05]"
+                      >
+                        <RotateCcw size={16} />
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div>
+                      <label
+                          htmlFor="focus-task"
+                          className="mb-2 block text-sm font-medium text-gray-200"
+                      >
+                        What are you working on?
+                      </label>
+
+                      <input
+                          id="focus-task"
+                          value={focusTask}
+                          onChange={(event) => setFocusTask(event.target.value)}
+                          maxLength={100}
+                          placeholder="e.g. Solve 3 Java DSA problems"
+                          disabled={focusRunning}
+                          className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-gray-100 outline-none placeholder:text-gray-600 focus:border-lime-300/40 disabled:opacity-60"
+                      />
+                    </div>
+
+                    <div>
+                      <p className="mb-3 text-sm font-medium text-gray-200">
+                        Focus duration
+                      </p>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        {[25, 45, 60].map((minutes) => (
+                            <button
+                                key={minutes}
+                                type="button"
+                                disabled={focusRunning}
+                                onClick={() => {
+                                  setFocusDuration(minutes);
+                                  setFocusRemaining(minutes * 60);
+                                  setFocusMode("focus");
+                                }}
+                                className={`rounded-xl border px-3 py-3 text-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                    focusDuration === minutes && focusMode === "focus"
+                                        ? "border-lime-300/40 bg-lime-300/10 text-lime-300"
+                                        : "border-white/[0.08] text-gray-300 hover:bg-white/[0.04]"
+                                }`}
+                            >
+                              {minutes} min
+                            </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        disabled={focusRunning}
+                        onClick={() => {
+                          setFocusMode("break");
+                          setFocusRemaining(5 * 60);
+                        }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300/20 bg-sky-300/[0.05] px-4 py-3 text-sm text-sky-300 transition hover:bg-sky-300/10 disabled:opacity-50"
+                    >
+                      <Coffee size={17} />
+                      Set a 5-minute break
+                    </button>
+
+                    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                      <p className="text-xs uppercase tracking-wider text-muted">
+                        Your current task
+                      </p>
+                      <p className="mt-2 break-words font-medium text-gray-100">
+                        {focusTask.trim() || "Choose one task to focus on"}
+                      </p>
+                      <p className="mt-2 text-xs text-muted">
+                        Every completed focus session is a step forward.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </section>
             <footer className="mt-8 flex flex-col items-center justify-between gap-2 border-t border-white/[0.06] py-6 text-xs text-gray-600 sm:flex-row">
               <p>DAYBYDAY · Built one day at a time.</p>
               <p>Your journey. Your pace. Your progress.</p>
